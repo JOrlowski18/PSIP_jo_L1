@@ -8,3 +8,4 @@
 - Stanisław - turecki
 - Tymoteusz - toruński
 - Dominik - koniński
+- Marcin - miński
