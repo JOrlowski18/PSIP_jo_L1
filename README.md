@@ -7,3 +7,4 @@
 - Kacper - legnicki
 - Stanisław - turecki
 - Tymoteusz - toruński
+- Dominik - koniński
