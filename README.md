@@ -2,3 +2,4 @@
 - Jakub - chełmski
 - Jakub - chełmski
 - Dawid - bocheński
+- Bartek - radomszczański
