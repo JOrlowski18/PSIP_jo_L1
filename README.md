@@ -11,3 +11,4 @@
 - Marcin - miński
 - Michał - biłgorajski
 - Jan - warszawski
+- Daniel - sochaczewski
