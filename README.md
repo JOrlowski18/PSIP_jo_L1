@@ -12,4 +12,4 @@
 - Jan - warszawski
 - Daniel - sochaczewski
 - Julia - hajnowski
-- maciej - galant
+- maciej - kutnowski
