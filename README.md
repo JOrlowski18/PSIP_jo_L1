@@ -3,3 +3,4 @@
 - Jakub - chełmski
 - Dawid - bocheński
 - Bartek - radomszczański
+- Jan - miński
