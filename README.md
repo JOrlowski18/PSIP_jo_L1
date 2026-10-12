@@ -1,3 +1,15 @@
 # PSIP_jo_L1
 - Jakub - chełmski
+- Dawid - bocheński
+- Bartek - radomszczański
+- Jan - miński
+- Kacper - legnicki
+- Stanisław - turecki
+- Tymoteusz - toruński
+- Dominik - koniński
+- Marcin - miński
+- Michał - biłgorajski
+- Jan - warszawski
+- Daniel - sochaczewski
 - Julia - hajnowski
+- maciej - galant
