@@ -4,3 +4,4 @@
 - Dawid - bocheński
 - Bartek - radomszczański
 - Jan - miński
+- Kacper - legnicki
