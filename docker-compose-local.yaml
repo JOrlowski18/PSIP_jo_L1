@@ -22,7 +22,9 @@ services:
     volumes:
       - ./app:/app:ro
       - ./data:/data:ro
-    command: ["tail", "-f", "/dev/null"]
+      - ./output:/output
+    command: ["python3", "/app/python/load.py"]
 
 volumes:
+
   pgdata:
