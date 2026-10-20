@@ -19,4 +19,4 @@ services:
 
 volumes:
   pgdata:
-    name: remote-db-${ENVIROMENT}-pgdata
+    name: remote-db-${ENVIRONMENT}-pgdata
