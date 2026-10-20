@@ -1,10 +1,10 @@
-name: Stop Remote Database
+name: Destroy Remote Database
 
 on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Środowisko do zatrzymania"
+        description: "Środowisko do usunięcia"
         required: true
         type: choice
         options:
