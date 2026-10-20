@@ -26,7 +26,7 @@ jobs:
       - name: Stop PostGIS
         run: |
           docker compose \
-            -f docker-compose-remote.yml \
+            -f docker-compose-remote.yaml \
             -p remote-db-${{ inputs.environment }} \
             down
 
