@@ -24,7 +24,7 @@ services:
 
     environment:
       PGHOST: postgis
-      PGPORT: "5432"
+      PGPORT: ${POSTGRES_PORT:}
       PGUSER: ${POSTGRES_USER:}
       PGPASSWORD: ${POSTGRES_PASSWORD:}
       PGDATABASE: ${POSTGRES_DB:}
