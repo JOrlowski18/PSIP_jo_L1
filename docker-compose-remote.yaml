@@ -24,10 +24,10 @@ services:
 
     environment:
       PGHOST: postgis
-      PGPORT: ${POSTGRES_PORT:}
-      PGUSER: ${POSTGRES_USER:}
-      PGPASSWORD: ${POSTGRES_PASSWORD:}
-      PGDATABASE: ${POSTGRES_DB:}
+      PGPORT: ${POSTGRES_PORT}
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
       H3_RESOLUTIONS: "7,8,9"
 
     depends_on:
