@@ -39,7 +39,7 @@ def read_boundary(path):
     if source.crs is None:
         raise ValueError("Brak układu współrzędnych. Sprawdź plik .prj.")
 
-    source = source.to_crs(epsg=2180)
+    source = source.to_crs(epsg=4326)
 
     polygons = []
     for geometry in source.geometry:
@@ -98,10 +98,10 @@ def generate_grid(boundary, resolution):
             f"Nie wygenerowano komórek dla rozdzielczości {resolution}."
         )
 
-    grid = gpd.GeoDataFrame(records, geometry="geometry", crs="EPSG:2180")
+    grid = gpd.GeoDataFrame(records, geometry="geometry", crs="EPSG:4326")
 
     # Powierzchnia przyciętej komórki w m² — układ metryczny Polski.
-    grid["area_m2"] = grid.to_crs(epsg=2180).geometry.area
+    grid["area_m2"] = grid.to_crs(epsg=4326).geometry.area
 
     if grid["h3_id"].duplicated().any():
         raise ValueError("Wygenerowano zduplikowane identyfikatory H3.")

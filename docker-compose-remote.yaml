@@ -17,6 +17,26 @@ services:
 
     restart: unless-stopped
 
+  python:
+    build:
+      context: .
+      dockerfile: docker/python/Dockerfile
+
+    environment:
+      PGHOST: postgis
+      PGPORT: '5432'
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      H3_RESOLUTIONS: "7,8,9"
+
+    depends_on:
+      - postgis
+
+    command: ["python3", "/app/python/load.py"]
+
+    restart: "no"
+
 volumes:
   pgdata:
     name: remote-db-${ENVIRONMENT}-pgdata
