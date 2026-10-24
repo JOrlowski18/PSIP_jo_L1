@@ -23,3 +23,11 @@ RUN python3 -m venv --system-site-packages /opt/venv \
 ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
+
+COPY app/python/ /app/python/
+
+COPY data/powiat.shp data/powiat.shx data/powiat.dbf data/powiat.prj data/powiat.cpg /data/
+
+ENV PYTHONUNBUFFERED=1
+
+CMD ["python3", "/app/python/load.py"]
