@@ -18,7 +18,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Start PostGIS
+      - name: Start PostGIS and load H3
         env:
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
@@ -29,9 +29,48 @@ jobs:
           docker compose \
             -f docker-compose-remote.yaml \
             -p remote-db-${{ github.ref_name }} \
-            up -d --build
+            up -d --build postgis
+
+          docker compose \
+            -f docker-compose-remote.yaml \
+            -p remote-db-${{ github.ref_name }} \
+            build python
+
+          docker compose \
+            -f docker-compose-remote.yaml \
+            -p remote-db-${{ github.ref_name }} \
+            run --rm --no-deps -T python python3 -u - <<'PY'
+          import os
+          import subprocess
+          import time
+
+          import psycopg2
+
+          for attempt in range(1, 31):
+              try:
+                  connection = psycopg2.connect(
+                      host=os.environ["PGHOST"],
+                      port=os.environ["PGPORT"],
+                      user=os.environ["PGUSER"],
+                      password=os.environ["PGPASSWORD"],
+                      dbname=os.environ["PGDATABASE"],
+                      connect_timeout=3,
+                  )
+                  connection.close()
+                  break
+              except psycopg2.OperationalError:
+                  if attempt == 30:
+                      raise
+                  print(f"Oczekiwanie na PostgreSQL: {attempt}/30")
+                  time.sleep(3)
+
+          subprocess.run(
+              ["python3", "-u", "/app/python/load.py"],
+              check=True,
+          )
+          PY
 
       - name: Show running containers
         run: |
           docker ps
-          docker volume ls | grep remote-db || true
+          docker volume ls | grep remote-db
