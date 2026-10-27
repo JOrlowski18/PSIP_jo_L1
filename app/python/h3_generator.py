@@ -161,7 +161,7 @@ def read_bdot(folder):
     return layers
 
 
-def aggregate_grid(grid, layers):
+def aggregate_grid(grid, layers, on_class=None):
     """Agreguje klasy w 2180; zwraca siatkę i geometrie klas w 4326."""
     if grid.crs.to_epsg() != 2180:
         raise ValueError("Agregacja wymaga EPSG:2180.")
@@ -222,7 +222,7 @@ def aggregate_grid(grid, layers):
                         break
 
         result[column] = values
-        vectors[name] = gpd.GeoDataFrame(
+        frame = gpd.GeoDataFrame(
             {
                 "h3_id": result["h3_id"].tolist(),
                 "bdot_code": [code] * len(result),
@@ -235,6 +235,11 @@ def aggregate_grid(grid, layers):
             geometry="geom",
             crs=2180,
         ).to_crs(4326)
+
+        if on_class is None:
+            vectors[name] = frame
+        else:
+            on_class(name, frame)
 
         print(f"Agregacja: {name}", flush=True)
 

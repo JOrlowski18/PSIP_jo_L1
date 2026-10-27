@@ -49,9 +49,9 @@ def get_bdot(folder):
 
 
 def save(connection, frame, schema, table, key):
-    """Zastępuje tabelę, również gdy wszystkie geometrie są puste."""
     quote = connection.dialect.identifier_preparer.quote
     qualified = f"{quote(schema)}.{quote(table)}"
+    index_name = quote(f"idx_{table}_geom")
 
     if frame.empty or frame.geometry.isna().all():
         frame.drop(columns="geom").to_sql(
@@ -62,9 +62,6 @@ def save(connection, frame, schema, table, key):
             f"ALTER TABLE {qualified} ADD COLUMN "
             f"geom geometry(Geometry,{frame.crs.to_epsg()})"
         ))
-        connection.execute(text(
-            f"CREATE INDEX ON {qualified} USING GIST (geom)"
-        ))
     else:
         frame.to_postgis(
             table, connection, schema=schema,
@@ -74,6 +71,14 @@ def save(connection, frame, schema, table, key):
     connection.execute(text(
         f"ALTER TABLE {qualified} ADD PRIMARY KEY ({quote(key)})"
     ))
+
+    # GeoAlchemy zwykle tworzy już indeks o tej nazwie.
+    connection.execute(text(
+        f"CREATE INDEX IF NOT EXISTS {index_name} "
+        f"ON {qualified} USING GIST (geom)"
+    ))
+    connection.execute(text(f"ANALYZE {qualified}"))
+
     count = connection.execute(
         text(f"SELECT COUNT(*) FROM {qualified}")
     ).scalar_one()
@@ -126,17 +131,20 @@ def main():
     )
 
     try:
-        # Nieudany zapis wycofuje zmiany całej transakcji.
         with engine.begin() as connection:
-            for schema in ("grid", "results", "bdot"):
+            connection.execute(text("SET LOCAL lock_timeout = '30s'"))
+
+            for schema in ("grid", "bdot"):
                 connection.execute(text(
                     f"CREATE SCHEMA IF NOT EXISTS {schema}"
                 ))
 
             county = gpd.GeoDataFrame(
                 {"id": [1], "geom": [boundary]},
-                geometry="geom", crs=4326,
+                geometry="geom",
+                crs=4326,
             ).to_crs(2180)
+
             save(connection, county, "public", "powiat", "id")
 
             for code, layer in layers.items():
@@ -147,32 +155,44 @@ def main():
                     "bdot", layer["name"], "source_id",
                 )
 
-            for resolution, grid in grids.items():
-                # Siatka obliczeniowa: EPSG:2180.
+        # Osobna transakcja dla każdej rozdzielczości.
+        for resolution, grid in grids.items():
+            schema = f"results_r{resolution}"
+            print(f"START: {schema}", flush=True)
+
+            with engine.begin() as connection:
+                connection.execute(text("SET LOCAL lock_timeout = '30s'"))
+                connection.execute(text(
+                    f"CREATE SCHEMA IF NOT EXISTS {schema}"
+                ))
+
                 save(
                     connection, grid,
                     "grid", f"h3_r{resolution}", "h3_id",
                 )
 
                 if layers:
-                    print(f"Agregacja H3 {resolution}...", flush=True)
-                    result, vectors = aggregate_grid(grid, layers)
-
-                    for name, frame in vectors.items():
+                    def save_class(name, frame):
                         save(
                             connection, frame,
-                            "results", f"{name}_r{resolution}", "h3_id",
+                            schema, name, "h3_id",
                         )
+
+                    result, _ = aggregate_grid(
+                        grid, layers, on_class=save_class
+                    )
                 else:
                     result = grid.to_crs(4326)
 
-                # Siatka wynikowa z kolumnami klas: EPSG:4326.
                 save(
                     connection, result,
-                    "results", f"h3_r{resolution}", "h3_id",
+                    schema, "siatka", "h3_id",
                 )
 
-        print("OK: zatwierdzono wszystkie wyniki w PostGIS.", flush=True)
+            print(f"ZATWIERDZONO: {schema}", flush=True)
+
+        print("OK: zakończono cały import.", flush=True)
+
     finally:
         engine.dispose()
 
