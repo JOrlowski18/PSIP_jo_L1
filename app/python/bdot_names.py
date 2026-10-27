@@ -1,7 +1,7 @@
 NAMES = {
     "ADJA": "jednostki_administracyjne", "ADMS": "miejscowosci",
     "BUBD": "budynki", "BUHD": "budowle_hydrotechniczne",
-    "BUIB": "inne_budowle", "BUIN": "budowle_inzynierskie",
+    "BUIB": "inne_budowle", "BIUB": "inne_budowle", "BUIN": "budowle_inzynierskie",
     "BUIT": "urzadzenia_techniczne", "BUSP": "budowle_sportowe",
     "BUTR": "urzadzenia_transportowe", "BUUO": "umocnienia",
     "BUWT": "wysokie_budowle_techniczne", "BUZM": "budowle_ziemne",
