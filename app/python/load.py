@@ -1,134 +1,178 @@
 import os
-import subprocess
+import shutil
+import tempfile
+import urllib.request
+import zipfile
 from pathlib import Path
 
+import geopandas as gpd
 from sqlalchemy import URL, create_engine, text
 
-from h3_generator import generate_grid, read_boundary
+from h3_generator import (
+    aggregate_grid,
+    generate_grid,
+    read_bdot,
+    read_boundary,
+)
+
+
+def get_bdot(folder):
+    """Lokalne GPKG albo pobranie paczki hajnowskiej na runnerze."""
+    folder = Path(folder)
+    if any(folder.rglob("*.gpkg")):
+        return read_bdot(folder)
+
+    url = (
+        "https://opendata.geoportal.gov.pl/"
+        "bdot10k/schemat2021/GPKG/20/2005_GPKG.zip"
+    )
+
+    with tempfile.TemporaryDirectory() as temporary:
+        target = Path(temporary)
+        archive = target / "bdot.zip"
+        print("Pobieranie BDOT10K powiatu hajnowskiego...", flush=True)
+
+        with urllib.request.urlopen(url, timeout=120) as response:
+            with archive.open("wb") as output:
+                shutil.copyfileobj(response, output)
+
+        with zipfile.ZipFile(archive) as package:
+            for item in package.infolist():
+                name = Path(item.filename).name
+                if item.is_dir() or not name.lower().endswith(".gpkg"):
+                    continue
+                with package.open(item) as source:
+                    with (target / name).open("xb") as output:
+                        shutil.copyfileobj(source, output)
+
+        return read_bdot(target)
+
+
+def save(connection, frame, schema, table, key):
+    """Zastępuje tabelę, również gdy wszystkie geometrie są puste."""
+    quote = connection.dialect.identifier_preparer.quote
+    qualified = f"{quote(schema)}.{quote(table)}"
+
+    if frame.empty or frame.geometry.isna().all():
+        frame.drop(columns="geom").to_sql(
+            table, connection, schema=schema,
+            if_exists="replace", index=False,
+        )
+        connection.execute(text(
+            f"ALTER TABLE {qualified} ADD COLUMN "
+            f"geom geometry(Geometry,{frame.crs.to_epsg()})"
+        ))
+        connection.execute(text(
+            f"CREATE INDEX ON {qualified} USING GIST (geom)"
+        ))
+    else:
+        frame.to_postgis(
+            table, connection, schema=schema,
+            if_exists="replace", index=False, chunksize=1000,
+        )
+
+    connection.execute(text(
+        f"ALTER TABLE {qualified} ADD PRIMARY KEY ({quote(key)})"
+    ))
+    count = connection.execute(
+        text(f"SELECT COUNT(*) FROM {qualified}")
+    ).scalar_one()
+
+    if count != len(frame):
+        raise RuntimeError(f"Niepełny zapis: {qualified}")
+
+    print(f"Zapis: {schema}.{table}, wiersze: {count}", flush=True)
 
 
 def main():
-    shapefile = Path("/data/powiat.shp")
+    stage = os.getenv("ENVIRONMENT", "local")
+    if stage not in {"local", "env-test-js-db", "env-qa-jo-db", "main"}:
+        raise ValueError(f"Nieznane środowisko: {stage}")
 
-    if not shapefile.exists():
-        raise FileNotFoundError(f"Nie znaleziono pliku: {shapefile}")
+    password = os.getenv("PGPASSWORD")
+    if not password:
+        raise ValueError("Brak PGPASSWORD.")
 
-    # Parametry połączenia z kontenerem PostgreSQL.
-    environment = os.environ.copy()
-    environment.setdefault("PGHOST", "postgis")
-    environment.setdefault("PGPORT", "5432")
-    environment.setdefault("PGDATABASE", "psip")
-    environment.setdefault("PGUSER", "psip")
-    environment.setdefault("PGPASSWORD", "psip")
-
-    resolutions = sorted(
-        {
-            int(value.strip())
-            for value in os.getenv("H3_RESOLUTIONS", "7,8,9").split(",")
-            if value.strip()
-        }
-    )
-
+    resolutions = sorted({
+        int(value.strip())
+        for value in os.getenv("H3_RESOLUTIONS", "7,8,9").split(",")
+        if value.strip()
+    })
     if not resolutions or any(r < 0 or r > 15 for r in resolutions):
-        raise ValueError("Rozdzielczości H3 muszą mieścić się w zakresie 0–15.")
+        raise ValueError("Rozdzielczości muszą być w zakresie 0–15.")
 
-    # 1. Dotychczasowy import granicy powiatu.
-    # Dane połączenia ogr2ogr odczytuje ze zmiennych PG*.
-    command = [
-        "ogr2ogr",
-        "-f", "PostgreSQL",
-        "PG:",
-        str(shapefile),
-        "-nln", "public.powiat",
-        "-lco", "GEOMETRY_NAME=geom",
-        "-overwrite",
-    ]
-
-    subprocess.run(command, env=environment, check=True)
-    print("Załadowano powiat.shp do tabeli public.powiat.", flush=True)
-
-    # 2. Generowanie siatek w pamięci — bez zapisywania GeoJSON.
-    boundary = read_boundary(shapefile)
-    grids = {}
-
-    for resolution in resolutions:
-        print(
-            f"Generowanie siatki H3 — rozdzielczość {resolution}...",
-            flush=True,
-        )
-
-        grid = generate_grid(boundary, resolution)
-
-        # Układ metryczny potrzebny do późniejszej agregacji BDOT10K.
-        grid = grid.to_crs(epsg=2180).rename_geometry("geom")
-        grid["area_m2"] = grid.geometry.area
-
-        grids[resolution] = grid
-
-    # 3. Połączenie do zapisu siatek.
-    connection_url = URL.create(
-        drivername="postgresql+psycopg2",
-        username=environment["PGUSER"],
-        password=environment["PGPASSWORD"],
-        host=environment["PGHOST"],
-        port=int(environment["PGPORT"]),
-        database=environment["PGDATABASE"],
+    boundary = read_boundary("/data/powiat.shp")
+    grids = {
+        resolution: generate_grid(boundary, resolution)
+        for resolution in resolutions
+    }
+    layers = (
+        get_bdot(os.getenv("BDOT_DIR", "/data/bdot"))
+        if stage in {"local", "env-test-js-db"}
+        else {}
     )
 
     engine = create_engine(
-        connection_url,
-        pool_pre_ping=True,
+        URL.create(
+            "postgresql+psycopg2",
+            host=os.getenv("PGHOST", "postgis"),
+            port=int(os.getenv("PGPORT", "5432")),
+            username=os.getenv("PGUSER", "psip"),
+            password=password,
+            database=os.getenv("PGDATABASE", "psip"),
+        ),
         connect_args={"connect_timeout": 15},
+        pool_pre_ping=True,
     )
 
-    counts = {}
-
     try:
-        # Wszystkie siatki zapisujemy w jednej transakcji.
+        # Nieudany zapis wycofuje zmiany całej transakcji.
         with engine.begin() as connection:
-            connection.execute(
-                text("CREATE SCHEMA IF NOT EXISTS grid")
-            )
+            for schema in ("grid", "results", "bdot"):
+                connection.execute(text(
+                    f"CREATE SCHEMA IF NOT EXISTS {schema}"
+                ))
+
+            county = gpd.GeoDataFrame(
+                {"id": [1], "geom": [boundary]},
+                geometry="geom", crs=4326,
+            ).to_crs(2180)
+            save(connection, county, "public", "powiat", "id")
+
+            for code, layer in layers.items():
+                source = layer["data"].copy()
+                source["bdot_code"] = code
+                save(
+                    connection, source,
+                    "bdot", layer["name"], "source_id",
+                )
 
             for resolution, grid in grids.items():
-                table_name = f"h3_r{resolution}"
-
-                grid.to_postgis(
-                    name=table_name,
-                    con=connection,
-                    schema="grid",
-                    if_exists="replace",
-                    index=False,
-                    chunksize=1000,
+                # Siatka obliczeniowa: EPSG:2180.
+                save(
+                    connection, grid,
+                    "grid", f"h3_r{resolution}", "h3_id",
                 )
 
-                # Nazwa tabeli pochodzi ze zweryfikowanej liczby 0–15.
-                connection.execute(
-                    text(
-                        f'ALTER TABLE grid."{table_name}" '
-                        "ADD PRIMARY KEY (h3_id)"
-                    )
+                if layers:
+                    print(f"Agregacja H3 {resolution}...", flush=True)
+                    result, vectors = aggregate_grid(grid, layers)
+
+                    for name, frame in vectors.items():
+                        save(
+                            connection, frame,
+                            "results", f"{name}_r{resolution}", "h3_id",
+                        )
+                else:
+                    result = grid.to_crs(4326)
+
+                # Siatka wynikowa z kolumnami klas: EPSG:4326.
+                save(
+                    connection, result,
+                    "results", f"h3_r{resolution}", "h3_id",
                 )
 
-                count = connection.execute(
-                    text(f'SELECT COUNT(*) FROM grid."{table_name}"')
-                ).scalar_one()
-
-                if count != len(grid):
-                    raise RuntimeError(
-                        f"Niepełny zapis {table_name}: {count}/{len(grid)}"
-                    )
-
-                counts[table_name] = count
-
-        for table_name, count in counts.items():
-            print(
-                f"OK: grid.{table_name} — zapisano {count} komórek.",
-                flush=True,
-            )
-
-        print("Import siatek do PostGIS zakończony.", flush=True)
-
+        print("OK: zatwierdzono wszystkie wyniki w PostGIS.", flush=True)
     finally:
         engine.dispose()
 
