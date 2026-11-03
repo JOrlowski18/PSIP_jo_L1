@@ -28,7 +28,9 @@ services:
       PGUSER: ${POSTGRES_USER}
       PGPASSWORD: ${POSTGRES_PASSWORD}
       PGDATABASE: ${POSTGRES_DB}
+      ENVIRONMENT: ${ENVIRONMENT}
       H3_RESOLUTIONS: "7,8,9"
+
 
     depends_on:
       - postgis
