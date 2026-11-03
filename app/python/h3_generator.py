@@ -161,6 +161,51 @@ def read_bdot(folder):
     return layers
 
 
+def check_areas(grid):
+    """Sprawdza powierzchnie poszczególnych klas względem oczka."""
+    if grid.crs is None or grid.crs.to_epsg() != 2180:
+        raise ValueError("Kontrola powierzchni wymaga EPSG:2180")
+
+    cell_area = grid.geometry.area
+    tolerance = cell_area * 1e-6 + 0.01
+    reports = []
+
+    identifiers = [
+        column
+        for column in ("resolution", "cell_id", "h3_id")
+        if column in grid.columns
+    ]
+
+    for column in grid.columns:
+        if column == "area_m2" or not column.endswith("_area_m2"):
+            continue
+
+        values = grid[column]
+        exceeded = values > cell_area + tolerance
+
+        if exceeded.any():
+            report = grid.loc[exceeded, identifiers].copy()
+            report["klasa"] = column.removesuffix("_area_m2")
+            report["powierzchnia_oczka_m2"] = cell_area[exceeded]
+            report["suma_klasy_m2"] = values[exceeded]
+            report["nadmiar_m2"] = values[exceeded] - cell_area[exceeded]
+            reports.append(report)
+
+    if reports:
+        import pandas as pd
+
+        report = pd.concat(reports, ignore_index=True)
+        print(
+            f"UWAGA: {len(report)} przekroczeń powierzchni:\n"
+            + report.to_string(index=False),
+            flush=True,
+        )
+        return report
+
+    print("Kontrola powierzchni: brak przekroczeń.", flush=True)
+    return None
+
+
 def aggregate_grid(grid, layers, on_class=None):
     """Agreguje klasy w 2180; zwraca siatkę i geometrie klas w 4326."""
     if grid.crs.to_epsg() != 2180:
@@ -222,6 +267,13 @@ def aggregate_grid(grid, layers, on_class=None):
                         break
 
         result[column] = values
+
+        # Normalizacja danej klasy względem maksimum w całej siatce.
+        maximum = result[column].max()
+        result[f"{column}_norm"] = (
+            result[column] / maximum if maximum > 0 else 0.0
+        )
+
         frame = gpd.GeoDataFrame(
             {
                 "h3_id": result["h3_id"].tolist(),
@@ -242,6 +294,8 @@ def aggregate_grid(grid, layers, on_class=None):
             on_class(name, frame)
 
         print(f"Agregacja: {name}", flush=True)
+
+    check_areas(result)
 
     # Transformujemy geometrię, nie wartości długości i powierzchni.
     return result.to_crs(4326), vectors
