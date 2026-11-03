@@ -113,7 +113,7 @@ def main():
     }
     layers = (
         get_bdot(os.getenv("BDOT_DIR", "/data/bdot"))
-        if stage in {"local", "env-test-js-db"}
+        if stage in {"local", "env-test-js-db","env-qa-jo-db", "main"}
         else {}
     )
 
