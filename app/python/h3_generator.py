@@ -10,7 +10,7 @@ from shapely.geometry import Polygon, mapping
 from shapely.ops import unary_union
 
 from bdot_names import NAMES
-
+from bdot_weights import WEIGHTS
 
 TYPES = {
     "P": ("Point", "count"),
@@ -207,18 +207,21 @@ def check_areas(grid):
 
 
 def aggregate_grid(grid, layers, on_class=None):
-    """Agreguje klasy w 2180; zwraca siatkę i geometrie klas w 4326."""
+    """Agreguje klasy, normalizuje wartości i oblicza wskaźnik IOP."""
     if grid.crs.to_epsg() != 2180:
         raise ValueError("Agregacja wymaga EPSG:2180.")
 
     result = grid.sort_values("h3_id").reset_index(drop=True).copy()
     spatial_index = result.sindex
     vectors = {}
+    result["wsp_iop_norm"] = 0.0
 
     for code, layer in sorted(layers.items()):
         kind, metric = TYPES[code[-1]]
         name = layer["name"]
         column = f"{name}_{metric}"
+        weight = WEIGHTS[code.split("_")[1]]
+
         values = [0 if kind == "Point" else 0.0 for _ in range(len(result))]
         fragments = defaultdict(list)
 
@@ -266,13 +269,15 @@ def aggregate_grid(grid, layers, on_class=None):
                     if remaining.is_empty:
                         break
 
+        # Surowa suma oraz jej normalizacja dla całej siatki.
         result[column] = values
-
-        # Normalizacja danej klasy względem maksimum w całej siatce.
         maximum = result[column].max()
         result[f"{column}_norm"] = (
             result[column] / maximum if maximum > 0 else 0.0
         )
+
+        # Wkład danej warstwy do wskaźnika każdego oczka.
+        result["wsp_iop_norm"] += result[f"{column}_norm"] * weight
 
         frame = gpd.GeoDataFrame(
             {
@@ -295,7 +300,20 @@ def aggregate_grid(grid, layers, on_class=None):
 
         print(f"Agregacja: {name}", flush=True)
 
+    # Liczymy wszystkie wczytane warstwy, również zerowe.
+    if layers:
+        result["wsp_iop_norm"] /= len(layers)
+        print(
+            f"IOP: uwzględniono {len(layers)} warstw; "
+            f"min={result['wsp_iop_norm'].min():.6f}, "
+            f"max={result['wsp_iop_norm'].max():.6f}",
+            flush=True,
+        )
+    else:
+        # Brak danych BDOT nie oznacza neutralnej przejezdności.
+        result["wsp_iop_norm"] = float("nan")
+        print("IOP: brak warstw BDOT — wskaźnik bez wartości.", flush=True)
+
     check_areas(result)
 
-    # Transformujemy geometrię, nie wartości długości i powierzchni.
     return result.to_crs(4326), vectors
