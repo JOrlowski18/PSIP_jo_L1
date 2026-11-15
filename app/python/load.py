@@ -1,4 +1,7 @@
 import os
+import uuid
+from analysis import normalized_weights
+from storage import save, save_analysis_metadata
 import shutil
 import tempfile
 import urllib.request
@@ -48,48 +51,8 @@ def get_bdot(folder):
         return read_bdot(target)
 
 
-def save(connection, frame, schema, table, key):
-    quote = connection.dialect.identifier_preparer.quote
-    qualified = f"{quote(schema)}.{quote(table)}"
-    index_name = quote(f"idx_{table}_geom")
-
-    if frame.empty or frame.geometry.isna().all():
-        frame.drop(columns="geom").to_sql(
-            table, connection, schema=schema,
-            if_exists="replace", index=False,
-        )
-        connection.execute(text(
-            f"ALTER TABLE {qualified} ADD COLUMN "
-            f"geom geometry(Geometry,{frame.crs.to_epsg()})"
-        ))
-    else:
-        frame.to_postgis(
-            table, connection, schema=schema,
-            if_exists="replace", index=False, chunksize=1000,
-        )
-
-    connection.execute(text(
-        f"ALTER TABLE {qualified} ADD PRIMARY KEY ({quote(key)})"
-    ))
-
-    # GeoAlchemy zwykle tworzy już indeks o tej nazwie.
-    connection.execute(text(
-        f"CREATE INDEX IF NOT EXISTS {index_name} "
-        f"ON {qualified} USING GIST (geom)"
-    ))
-    connection.execute(text(f"ANALYZE {qualified}"))
-
-    count = connection.execute(
-        text(f"SELECT COUNT(*) FROM {qualified}")
-    ).scalar_one()
-
-    if count != len(frame):
-        raise RuntimeError(f"Niepełny zapis: {qualified}")
-
-    print(f"Zapis: {schema}.{table}, wiersze: {count}", flush=True)
-
-
 def main():
+    run_id = uuid.uuid4().hex
     stage = os.getenv("ENVIRONMENT", "local")
     if stage not in {"local", "env-test-js-db", "env-qa-jo-db", "main"}:
         raise ValueError(f"Nieznane środowisko: {stage}")
@@ -187,6 +150,9 @@ def main():
                 save(
                     connection, result,
                     schema, "siatka", "h3_id",
+                )
+                save_analysis_metadata(
+                    connection, schema, result, normalized_weights(result), run_id, stage,
                 )
 
             print(f"ZATWIERDZONO: {schema}", flush=True)
