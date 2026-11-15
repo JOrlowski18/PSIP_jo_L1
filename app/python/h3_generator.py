@@ -3,6 +3,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import geopandas as gpd
+import pandas as pd
 import h3
 import pyogrio
 from shapely import force_2d, make_valid
@@ -10,7 +11,7 @@ from shapely.geometry import Polygon, mapping
 from shapely.ops import unary_union
 
 from bdot_names import NAMES
-from bdot_weights import WEIGHTS
+from analysis import calculate_iop, normalized_weights
 
 TYPES = {
     "P": ("Point", "count"),
@@ -87,15 +88,16 @@ def generate_grid(boundary, resolution):
         records, geometry="geom", crs=4326
     ).to_crs(2180)
 
+    grid["cell_id"] = range(1, len(grid) + 1)
     grid["area_m2"] = grid.geometry.area
     if not grid.geometry.is_valid.all():
         raise ValueError("Niepoprawna geometria siatki.")
     return grid
 
 
-def read_bdot(folder):
+def read_bdot(folder, paths=None):
     """Odczytuje geometrie klas BDOT10K w EPSG:2180."""
-    files = sorted(Path(folder).rglob("*.gpkg"))
+    files = list(paths) if paths is not None else sorted(Path(folder).rglob("*.gpkg"))
     if not files:
         raise FileNotFoundError(f"Brak plików GPKG w {folder}")
 
@@ -161,7 +163,7 @@ def read_bdot(folder):
     return layers
 
 
-def check_areas(grid):
+def check_areas(grid, report_path=None):
     """Sprawdza powierzchnie poszczególnych klas względem oczka."""
     if grid.crs is None or grid.crs.to_epsg() != 2180:
         raise ValueError("Kontrola powierzchni wymaga EPSG:2180")
@@ -195,9 +197,11 @@ def check_areas(grid):
         import pandas as pd
 
         report = pd.concat(reports, ignore_index=True)
+        if report_path is not None:
+            report.to_csv(report_path,index=False)
         print(
             f"UWAGA: {len(report)} przekroczeń powierzchni:\n"
-            + report.to_string(index=False),
+            + report.head(5).to_string(index=False),
             flush=True,
         )
         return report
@@ -206,26 +210,29 @@ def check_areas(grid):
     return None
 
 
-def aggregate_grid(grid, layers, on_class=None):
+def aggregate_grid(grid, layers, on_class=None, cancel=None, validate_areas=True):
     """Agreguje klasy, normalizuje wartości i oblicza wskaźnik IOP."""
     if grid.crs.to_epsg() != 2180:
         raise ValueError("Agregacja wymaga EPSG:2180.")
 
     result = grid.sort_values("h3_id").reset_index(drop=True).copy()
+    if "cell_id" not in result:
+        result["cell_id"] = range(1, len(result)+1)
     spatial_index = result.sindex
     vectors = {}
-    result["wsp_iop_norm"] = 0.0
+    metric_columns = {}
 
     for code, layer in sorted(layers.items()):
         kind, metric = TYPES[code[-1]]
         name = layer["name"]
         column = f"{name}_{metric}"
-        weight = WEIGHTS[code.split("_")[1]]
 
         values = [0 if kind == "Point" else 0.0 for _ in range(len(result))]
         fragments = defaultdict(list)
 
-        for geometry in layer["data"].geometry:
+        for ordinal, geometry in enumerate(layer["data"].geometry):
+            if cancel and ordinal % 256 == 0:
+                cancel()
             if kind == "Point":
                 for point in parts(geometry, "Point"):
                     matches = sorted(
@@ -243,7 +250,9 @@ def aggregate_grid(grid, layers, on_class=None):
             )
             remaining = geometry
 
-            for index in matches:
+            for ordinal_match, index in enumerate(matches):
+                if cancel and ordinal_match % 256 == 0:
+                    cancel()
                 i = int(index)
                 source = remaining if kind == "LineString" else geometry
                 clipped = parts(
@@ -269,19 +278,14 @@ def aggregate_grid(grid, layers, on_class=None):
                     if remaining.is_empty:
                         break
 
-        # Surowa suma oraz jej normalizacja dla całej siatki.
-        result[column] = values
-        maximum = result[column].max()
-        result[f"{column}_norm"] = (
-            result[column] / maximum if maximum > 0 else 0.0
-        )
-
-        # Wkład danej warstwy do wskaźnika każdego oczka.
-        result["wsp_iop_norm"] += result[f"{column}_norm"] * weight
+        metric_columns[column] = values
+        maximum = max(values, default=0)
+        metric_columns[f"{column}_norm"] = [value/maximum if maximum>0 else 0.0 for value in values]
 
         frame = gpd.GeoDataFrame(
             {
                 "h3_id": result["h3_id"].tolist(),
+                "cell_id": result["cell_id"].tolist(),
                 "bdot_code": [code] * len(result),
                 column: values,
                 "geom": [
@@ -300,20 +304,10 @@ def aggregate_grid(grid, layers, on_class=None):
 
         print(f"Agregacja: {name}", flush=True)
 
-    # Liczymy wszystkie wczytane warstwy, również zerowe.
-    if layers:
-        result["wsp_iop_norm"] /= len(layers)
-        print(
-            f"IOP: uwzględniono {len(layers)} warstw; "
-            f"min={result['wsp_iop_norm'].min():.6f}, "
-            f"max={result['wsp_iop_norm'].max():.6f}",
-            flush=True,
-        )
-    else:
-        # Brak danych BDOT nie oznacza neutralnej przejezdności.
-        result["wsp_iop_norm"] = float("nan")
-        print("IOP: brak warstw BDOT — wskaźnik bez wartości.", flush=True)
+    result = gpd.GeoDataFrame(pd.concat([result, pd.DataFrame(metric_columns, index=result.index)],axis=1), geometry="geom", crs=2180)
+    result["wsp_iop_norm"] = calculate_iop(result, normalized_weights(result))
 
-    check_areas(result)
+    if validate_areas:
+        check_areas(result)
 
     return result.to_crs(4326), vectors
