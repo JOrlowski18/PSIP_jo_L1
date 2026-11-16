@@ -92,11 +92,15 @@ class LayoutMixin:
         self.draw()
         self.status.set("Wyczyszczono zaznaczenie obiektu.")
 
-    def clear_measure(self):
+    def reset_measure(self, finish_tool=False):
+        """Usuwa punkty pomiaru; opcjonalnie kończy aktywne narzędzie."""
         self.measure.clear()
-        if self.mode=="measure":
+        if finish_tool:
             self.finish_tool()
         self.draw()
+
+    def clear_measure(self):
+        self.reset_measure(finish_tool=self.mode == "measure")
         self.status.set("Wyczyszczono pomiar odległości.")
 
     def hide_all_layers(self):

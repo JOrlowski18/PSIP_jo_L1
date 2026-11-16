@@ -74,11 +74,7 @@ def main():
         resolution: generate_grid(boundary, resolution)
         for resolution in resolutions
     }
-    layers = (
-        get_bdot(os.getenv("BDOT_DIR", "/data/bdot"))
-        if stage in {"local", "env-test-js-db","env-qa-jo-db", "main"}
-        else {}
-    )
+    layers = get_bdot(os.getenv("BDOT_DIR", "/data/bdot"))
 
     engine = create_engine(
         URL.create(
@@ -134,18 +130,10 @@ def main():
                     "grid", f"h3_r{resolution}", "h3_id",
                 )
 
-                if layers:
-                    def save_class(name, frame):
-                        save(
-                            connection, frame,
-                            schema, name, "h3_id",
-                        )
+                def save_class(name, frame):
+                    save(connection, frame, schema, name, "h3_id")
 
-                    result, _ = aggregate_grid(
-                        grid, layers, on_class=save_class
-                    )
-                else:
-                    result = grid.to_crs(4326)
+                result, _ = aggregate_grid(grid, layers, on_class=save_class)
 
                 save(
                     connection, result,

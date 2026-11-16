@@ -152,15 +152,16 @@ class DialogsMixin:
         def preview(*args):
             nonlocal index
             index = self.selected[1] if self.selected and self.selected[0] == target_key else None
-            active = sum(v.get() != 0 for v in sliders.values())
-            total = 0.0
+            selected_weights = {c: v.get() for c, v in sliders.items()}
+            active = sum(w != 0 for w in selected_weights.values())
             for column, var in sliders.items():
                 value = float(layer.data.iloc[index][column]) if index is not None else None
                 contribution = value * var.get() if value is not None else None
-                if contribution is not None:
-                    total += contribution
                 labels[column].set(f"{var.get():+.2f} | norm={shown(value)} | wkład={shown(contribution)}")
-            result = total / active if active and index is not None else None
+            result = (
+                calculate_iop(layer.data.iloc[[index]], selected_weights).iloc[0]
+                if index is not None else None
+            )
             summary.set(f"n={active}; wybrane oczko: {index + 1 if index is not None else 'brak — kliknij oczko na mapie'}; IOP={shown(result)}")
         for i, (column, weight) in enumerate(weights.items()):
             var = tk.DoubleVar(value=weight)
@@ -324,7 +325,7 @@ class DialogsMixin:
             window.destroy()
             self.status.set("Wskaż pierwszy punkt pomiaru. Esc — anuluj.")
         self.action(body, "Wskaż dwa punkty", start)
-        self.action(body, "Usuń linię pomiaru", lambda: (self.measure.clear(), self.finish_tool(), self.draw()))
+        self.action(body, "Usuń linię pomiaru", lambda: self.reset_measure(finish_tool=True))
 
 
     def points_dialog(self):
