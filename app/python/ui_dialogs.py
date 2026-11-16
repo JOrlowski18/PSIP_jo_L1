@@ -1,6 +1,15 @@
-from ui_common import (
-    APP_LOGIN, APP_PASSWORD, CLASS_ORDER, ENVIRONMENTS, IOP, Layer, MAP_CRS, Path, SCHEMAS, THEMES, calculate_iop, colorchooser, create_engine, docker_url, filedialog, gpd, math, messagebox, normalized_weights, pd, prepare, shown, text, tk, ttk
-)
+import geopandas as gpd
+import math
+import pandas as pd
+import tkinter as tk
+from ui_config import APP_LOGIN, APP_PASSWORD, CLASS_ORDER, ENVIRONMENTS, IOP, MAP_CRS, SCHEMAS, THEMES
+from project_state import Layer
+from pathlib import Path
+from analysis import calculate_iop, normalized_weights
+from tkinter import colorchooser, filedialog, messagebox, ttk
+from sqlalchemy import create_engine, text
+from data_access import docker_url, prepare
+from ui_common import shown
 
 class DialogsMixin:
     def login_dialog(self):
@@ -89,7 +98,7 @@ class DialogsMixin:
                 self.active = self.selected = None
                 self.measure.clear()
                 for schema, table, geometry in rows:
-                    self.add_layer(Layer(table, schema, source=(schema, table, geometry), environment=selected_branch), draw=False)
+                    self.add_layer(Layer(table, schema, source=(schema, table, geometry), environment=selected_branch), draw=False, refresh=False)
                 self.rebuild_tree()
                 self.draw()
                 self.status.set(f"Połączono: {selected_branch}. Warstwy wynikowe: {len(rows)}.")
@@ -114,57 +123,6 @@ class DialogsMixin:
             return frame
         self.status.set(f"Wczytywanie {path.name}…")
         self.background(task, lambda frame: self.add_layer(Layer(path.name, "Pliki lokalne", frame, source=str(path.resolve()), visible=True)))
-
-
-    def layers_dialog(self):
-        window, body = self.modal("Kolejność i widoczność warstw", "620x530")
-        ttk.Label(body, text="Góra listy = wierzch mapy. Usunięcie dotyczy tylko podglądu.").pack()
-        listing = self.table(body, ("Warstwa", "Widoczna"), height=12)
-        def refresh():
-            listing.delete(*listing.get_children())
-            for key in self.order:
-                layer = self.layers[key]
-                listing.insert("", "end", iid=key, values=(f"{layer.group} / {layer.name}", "Tak" if layer.visible else "Nie"))
-        def operate(action):
-            items = listing.selection()
-            if not items:
-                return
-            key = items[0]
-            layer = self.layers[key]
-            index = self.order.index(key)
-            if action in (-1, 1):
-                target = index + action
-                if 0 <= target < len(self.order):
-                    other = self.layers[self.order[target]].group
-                    if other != layer.group:
-                        groups = list(dict.fromkeys(self.layers[k].group for k in self.order))
-                        ga,gb = groups.index(layer.group),groups.index(other)
-                        groups[ga],groups[gb] = groups[gb],groups[ga]
-                        self.order = [k for g in groups for k in self.order if self.layers[k].group==g]
-                    else:
-                        self.order[index], self.order[target] = self.order[target], self.order[index]
-            elif action == "show":
-                if layer.data is None:
-                    raise ValueError("Najpierw wczytaj warstwę, wybierając ją w głównym drzewie.")
-                layer.visible = not layer.visible
-            else:
-                if (layer.dirty or layer.modified) and not messagebox.askyesno("Usuń", "Odrzucić niezapisane zmiany tej warstwy?", parent=window):
-                    return
-                self.order.remove(key)
-                del self.layers[key]
-                if self.active == key:
-                    self.active = None
-                if self.selected and self.selected[0] == key:
-                    self.selected = None
-                    self.attributes.delete(*self.attributes.get_children())
-            refresh()
-            if key in self.layers:
-                listing.selection_set(key)
-            self.rebuild_tree()
-            self.draw()
-        refresh()
-        for title, action in (("W górę", -1), ("W dół", 1), ("Pokaż / ukryj", "show"), ("Usuń z podglądu", "remove")):
-            self.action(body, title, lambda a=action: operate(a))
 
 
     def weights_dialog(self):
@@ -420,7 +378,7 @@ class DialogsMixin:
 
     def coordinates_dialog(self):
         window,body=self.modal("Współrzędne kursora","490x260")
-        ttk.Label(body,text="Współrzędne są wyświetlane na dole okna w stopniach dziesiętnych (EPSG:4326).\n\nKolejność: szerokość N/S, długość E/W.\nPrzykład: 52.771119°N, 18.321333°E",wraplength=430).pack(pady=12)
+        ttk.Label(body,text="Współrzędne są wyświetlane nad mapą, w prawym górnym rogu w stopniach dziesiętnych (EPSG:4326).\n\nKolejność: szerokość N/S, długość E/W.\nPrzykład: 52.771119°N, 18.321333°E",wraplength=430).pack(pady=12)
         self.action(body,"Zamknij",window.destroy)
 
     def legend_dialog(self):
@@ -451,7 +409,7 @@ class DialogsMixin:
             raise ValueError("Najpierw wyświetl dane na mapie.")
         window, body = self.modal("Eksport mapy do PDF", "500x300")
         title = self.entry(body, "Tytuł mapy", "Przejezdność terenu")
-        ttk.Label(body, text="Eksport bieżącego zasięgu i widocznych warstw, z aktualnym stylem i legendą. Skala liczbowa znajduje się w dolnym pasku aplikacji. Skala liczbowa ekranu nie określa skali wydruku.", wraplength=440).pack(pady=10)
+        ttk.Label(body, text="Eksport bieżącego zasięgu i widocznych warstw, z aktualnym stylem i legendą. Skala liczbowa znajduje się nad mapą, w prawym górnym rogu. Skala liczbowa ekranu nie określa skali wydruku.", wraplength=440).pack(pady=10)
         def export():
             filename = filedialog.asksaveasfilename(parent=window, defaultextension=".pdf", filetypes=[("PDF", "*.pdf")])
             if not filename:

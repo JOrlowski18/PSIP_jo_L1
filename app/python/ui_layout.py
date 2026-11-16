@@ -1,6 +1,8 @@
-from ui_common import (
-    BUTTON_COLUMNS, FONT, Figure, FigureCanvasTkAgg, NavigationToolbar2Tk, SIDEBAR_WIDTH, THEMES, TOOLS, tk, ttk, messagebox
-)
+import tkinter as tk
+from ui_config import FONT, SIDEBAR_WIDTH, THEMES
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+from tkinter import ttk, messagebox
 
 from ui_config import MENUS, TOP_TOOLS, MAP_TOOLS
 from ui_widgets import icon
@@ -13,13 +15,7 @@ class LayoutMixin:
         self.buttons, self.icon_buttons, self.dropmenus = [], [], []
         menu_bar = ttk.Frame(self, padding=(10, 6))
         menu_bar.pack(fill="x")
-        menus={**MENUS,"Wyczyść": (
-            ("Zaznaczenie obiektu","clear_selection"),
-            ("Pomiar odległości","clear_measure"),
-            ("Ukryj wszystkie warstwy","hide_all_layers"),
-            ("Pokaż wszystkie warstwy","show_all_layers"),
-        )}
-        for title, entries in menus.items():
+        for title, entries in MENUS.items():
             button=ttk.Menubutton(menu_bar,text=title,padding=(14,6))
             menu=tk.Menu(button,tearoff=False,font=FONT)
             for label,method in entries:

@@ -1,6 +1,10 @@
-from ui_common import (
-    IOP, SCHEMAS, WINDOW_SIZE, messagebox, normalized_weights, queue, read_result_layer, threading, tk
-)
+import queue
+import threading
+import tkinter as tk
+from ui_config import IOP, SCHEMAS, WINDOW_SIZE
+from tkinter import messagebox
+from analysis import normalized_weights
+from data_access import read_result_layer
 from ui_layout import LayoutMixin
 from ui_dialogs import DialogsMixin
 from map_view import MapMixin
@@ -26,7 +30,6 @@ class Viewer(LayoutMixin, DialogsMixin, MapMixin, ScenarioMixin, tk.Tk):
         self.measure = []
         self.point_target = None
         self.theme = "Jasny"
-        self.coord_crs = "4326"
         self.show_legend = True
         self.events = queue.Queue()
         self.build_ui()
@@ -84,7 +87,7 @@ class Viewer(LayoutMixin, DialogsMixin, MapMixin, ScenarioMixin, tk.Tk):
         self.after(100, self.poll)
 
 
-    def add_layer(self, layer, draw=True):
+    def add_layer(self, layer, draw=True, refresh=True):
         self.counter += 1
         key = f"layer_{self.counter}"
         self.layers[key] = layer
@@ -97,7 +100,8 @@ class Viewer(LayoutMixin, DialogsMixin, MapMixin, ScenarioMixin, tk.Tk):
             layer.original_weights = dict(layer.weights)
             layer.column = IOP
             layer.original_iop = layer.data[IOP].copy()
-        self.rebuild_tree()
+        if refresh:
+            self.rebuild_tree()
         if draw:
             self.active = key
             self.selected = None
@@ -125,7 +129,6 @@ class Viewer(LayoutMixin, DialogsMixin, MapMixin, ScenarioMixin, tk.Tk):
             return
         key, engine = self.active, self.engine
         schema, table, geometry = layer.source
-        quote = engine.dialect.identifier_preparer.quote_identifier
         def task():
             return read_result_layer(engine, schema, table, geometry)
         def ready(frame):

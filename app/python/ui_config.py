@@ -4,7 +4,6 @@ APP_LOGIN = "admin"
 APP_PASSWORD = "psip"
 WINDOW_SIZE = "1450x900"
 SIDEBAR_WIDTH = 370
-BUTTON_COLUMNS = 8
 FONT = ("Arial", 10)
 SCHEMAS = ("results_r7", "results_r8", "results_r9")
 ENVIRONMENTS = ("env-test-js-db", "env-qa-jo-db", "main", "local")
@@ -22,22 +21,15 @@ MENUS = {
     "Analiza": [("Odległość", "measure_dialog"), ("Współrzędne", "coordinates_dialog"),
                 ("Wagi / analiza", "weights_dialog"), ("Szukaj", "search_dialog")],
     "Misc": [("Motyw", "theme_dialog")],
+    "Wyczyść": [("Zaznaczenie obiektu", "clear_selection"),
+                ("Pomiar odległości", "clear_measure"),
+                ("Ukryj wszystkie warstwy", "hide_all_layers"),
+                ("Pokaż wszystkie warstwy", "show_all_layers")],
 }
 TOP_TOOLS = [("Styl", "style_dialog", "style"), ("Zoom do obiektu", "zoom_dialog", "target"),
              ("Warstwa punktowa", "points_dialog", "point"), ("Legenda", "legend_dialog", "legend")]
 MAP_TOOLS = [("Całość", "home", "home"), ("Wstecz", "back", "left"), ("Dalej", "forward", "right"),
              ("Przesuń", "pan", "pan"), ("Powiększ", "zoom", "zoom")]
-# Przestawiaj pozycje tutaj, aby zmienić układ przycisków.
-TOOLS = [
-    ("Sesja aplikacji", "session_dialog"), ("PostgreSQL", "database_dialog"),
-    ("Wczytaj SHP", "load_shp"), ("Warstwy", "layers_dialog"),
-    ("Wagi / analiza", "weights_dialog"), ("Styl", "style_dialog"),
-    ("Szukaj", "search_dialog"), ("Zoom do obiektu", "zoom_dialog"),
-    ("Odległość", "measure_dialog"), ("Warstwa punktowa", "points_dialog"),
-    ("Współrzędne", "coordinates_dialog"), ("Legenda", "legend_dialog"),
-    ("Motyw", "theme_dialog"), ("Eksport PDF", "pdf_dialog"),
-    ("Scenariusz", "scenario_dialog"),
-]
 GEOD = Geod(ellps="WGS84")
 TO_WGS = Transformer.from_crs(MAP_CRS, 4326, always_xy=True)
 TO_WEB = Transformer.from_crs(MAP_CRS, 3857, always_xy=True)

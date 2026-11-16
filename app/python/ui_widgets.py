@@ -1,4 +1,3 @@
-"""Małe ikony rysowane lokalnie; bez plików graficznych i pobierania zasobów."""
 from PIL import Image, ImageDraw, ImageTk
 
 def icon(master, name, color, size=22):

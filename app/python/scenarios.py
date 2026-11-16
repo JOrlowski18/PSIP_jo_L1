@@ -1,7 +1,11 @@
 """Portable view/scenario settings; no database credentials or geometry copies."""
-from ui_common import (
-    IOP, Path, THEMES, calculate_iop, filedialog, json, math, np, ttk
-)
+import json
+import math
+import numpy as np
+from ui_config import IOP, THEMES
+from pathlib import Path
+from analysis import calculate_iop
+from tkinter import filedialog, ttk
 
 class ScenarioMixin:
     def scenario_dialog(self):

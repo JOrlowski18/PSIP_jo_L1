@@ -1,6 +1,14 @@
-from ui_common import (
-    GEOD, IOP, LinearSegmentedColormap, MAP_CRS, Normalize, Patch, Point, ScalarMappable, THEMES, TO_WEB, TO_WGS, gpd, math, messagebox, np, pd, shown
-)
+import geopandas as gpd
+import math
+import numpy as np
+import pandas as pd
+from ui_config import GEOD, IOP, MAP_CRS, THEMES, TO_WEB, TO_WGS
+from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.patches import Patch
+from shapely.geometry import Point
+from matplotlib.cm import ScalarMappable
+from tkinter import messagebox
+from ui_common import shown
 from matplotlib.colors import TwoSlopeNorm
 from textwrap import fill
 
@@ -25,7 +33,6 @@ class MapMixin:
         if not hasattr(self,'artists'):
             self.artists = {}
             self.overlay = []
-            self.scalebar = None
             self.legend_panel = self.figure.add_axes((.8,.01,.19,.98), facecolor='white', zorder=.5)
             self.legend_panel.set_xticks([]); self.legend_panel.set_yticks([])
             for spine in self.legend_panel.spines.values():
